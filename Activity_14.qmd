@@ -1,0 +1,323 @@
+---
+title: "MOM Activity #14"
+author: "Nihal Mothkuri"
+date: 11/12/25
+format:
+  pdf:
+    toc: false
+    geometry: margin=1in
+execute:
+  echo: false
+  warning: false
+  message: false
+lang: en
+fig-cap-location: top
+tbl-cap-location: top
+---
+```{r}
+#\| label: armed-forces-wrangle\
+#\| tbl-cap: "Table 1: Sex by Rank for Selected Branch and Rank Group"\
+library(tidyverse)
+
+path <- "C:/Users/nihal/Downloads/US_Armed_Forces_(6_2025) - Sheet1(1).csv"
+raw  <- readr::read_csv(path, col_names = FALSE, show_col_types = FALSE)
+
+# ----- build names from 3 header rows -----
+row1 <- raw %>% slice(1) %>% unlist(use.names = FALSE) %>% as.character()      # "Pay Grade" + blanks
+row2 <- raw %>% slice(2) %>% unlist(use.names = FALSE) %>% as.character()      # branch names across
+row3 <- raw %>% slice(3) %>% unlist(use.names = FALSE) %>% as.character()      # Male/Female/Total
+
+# forward-fill branch names across the triads (skip first col)
+ff <- character(length(row2)); cur <- ""
+for (i in seq_along(row2)) {
+  if (i == 1) { ff[i] <- ""; next }
+  b <- trimws(row2[i]); if (!is.na(b) && b != "") cur <- b
+  ff[i] <- cur
+}
+
+make_name <- function(branch, kind) {
+  if (branch == "" || is.na(branch)) return("pay_grade")
+  b <- tolower(gsub("[^A-Za-z0-9]+","_", branch))
+  k <- tolower(gsub("[^A-Za-z0-9]+","_", kind))
+  paste0(b, "_", k)
+}
+
+new_names <- mapply(make_name, ff, row3, USE.NAMES = FALSE)
+new_names[1] <- "pay_grade"
+new_names <- make.unique(new_names)
+
+# data starts after 3 header rows
+df <- raw %>% slice(-(1:3)) %>% setNames(new_names)
+
+# numeric parsing + drop any "total" pay-grade summary rows
+df <- df %>%
+  mutate(across(-pay_grade, readr::parse_number)) %>%
+  filter(!str_detect(pay_grade, regex("^total", ignore_case = TRUE)))
+
+# ----- long table with branch + gender -----
+long_counts <- df %>%
+  pivot_longer(-pay_grade, names_to = "col", values_to = "count", values_drop_na = TRUE) %>%
+  mutate(
+    branch = sub("_(male|female|total)$", "", col),
+    gender = sub("^.*_(male|female|total)$", "\\1", tolower(col)) |> str_to_title(),
+    count  = as.integer(count),
+    component = case_when(
+      str_starts(pay_grade, "E") ~ "Enlisted",
+      str_starts(pay_grade, "W") ~ "Warrant",
+      str_starts(pay_grade, "O") ~ "Officer",
+      TRUE ~ NA_character_
+    )
+  ) %>%
+  filter(gender != "Total") %>%
+  select(pay_grade, branch, gender, count, component)
+
+View(long_counts)   # now shows rows
+```
+
+```{r}
+#\| label: armed2-forces-wrangle\
+#\| tbl-cap: "Table 2:  armed-forc eData Frequency Table"\
+library(dplyr)
+library(tidyr)
+library(janitor)
+library(knitr)
+
+# assume you already have long_counts with: pay_grade, branch, gender, count
+
+# choose one branch (edit as needed)
+chosen_branch <- "army"  # "army","navy","marine_corps","air_force","space_force"
+
+# build a clean frequency table (no rownames!)
+tbl <- long_counts %>%
+  filter(branch == chosen_branch) %>%
+  select(gender, pay_grade, count) %>%
+  pivot_wider(names_from = pay_grade, values_from = count, values_fill = 0) %>%
+  # make sure nothing becomes row names
+  ungroup() %>%
+  relocate(gender)
+
+# OPTION A: just counts (recommended by rubric for a frequency table)
+kable(tbl, caption = "Sex × Pay Grade Frequency Table")
+
+# OPTION B: counts + percentages + (n)
+tab_pct <- tbl %>%
+  tabyl(gender) %>%                           # convert to tabyl to use adorn_* safely
+  # The previous line expects the first column to be 'gender' and the rest numeric
+  adorn_totals("row") %>%                     # optional
+  adorn_percentages("col") %>%
+  adorn_pct_formatting(digits = 1) %>%
+  adorn_ns(position = "front")
+
+kable(tab_pct, caption = "Sex × Pay Grade with Column Percentages")
+
+```
+
+
+### **Armed Forces Narrative Text**
+
+In my table, I looked at how sex and rank are related within my chosen branch. I noticed that certain ranks have a lot more males than females, especially at higher levels. This makes it seem like sex and rank aren’t independent as some ranks are more common for one gender than the other. It was interesting to see how the data showed patterns that reflect real-world differences in military roles.
+```{r}
+#\| label: baby-names-plot\
+#\| fig-cap: "Figure 1: Trends in Popularity for Selected Baby Names Over Time"\
+#\| fig-alt: "Time series lines of annual US baby name counts for chosen names from 1880 to the present; labels and legend identify each name; color not required to interpret."\
+library(dplyr)
+library(ggplot2)
+library(scales)
+library(babynames)
+
+names_chosen <- c("Mary", "John", "Michael", "Jennifer")
+
+# wrangle safely
+bn_names <- babynames %>%
+  filter(name %in% names_chosen) %>%
+  group_by(year, name, sex) %>%
+  summarise(total = sum(.data$n), .groups = "drop")   # note: use n, not count
+
+year_totals <- babynames %>%
+  group_by(year, sex) %>%
+  summarise(year_total = sum(.data$n), .groups = "drop")
+
+bn_share <- bn_names %>%
+  left_join(year_totals, by = c("year","sex")) %>%
+  mutate(share = total / year_total) %>%
+  arrange(name, year)
+
+# plot
+p2 <- ggplot(bn_share, aes(year, share, color = name)) +
+  geom_line(linewidth = 1) +
+  facet_wrap(~ sex, nrow = 2) +
+  scale_y_continuous(labels = percent_format(accuracy = 0.1)) +
+  labs(
+    title = "Relative Popularity of Selected Baby Names Over Time",
+    subtitle = "Share of births per year (by sex); makes trends comparable across years",
+    x = "Year", y = "Share of births", color = "Name",
+    caption = "Source: babynames dataset"
+  ) +
+  theme_minimal(base_size = 13) +
+  theme(
+    plot.title = element_text(face = "bold"),
+    legend.position = "bottom",
+    panel.grid.minor = element_blank()
+  )
+
+p2
+```
+
+### **Popular Baby Names Narrative Text**
+
+This visualization shows the relative popularity of four names (Mary, Jennifer, John, and Michael) from 1880 to 2020, split into male (M) and female (F) panels. The y-axis shows each name’s share of total births, allowing for fair comparison across years. For females, Mary was most popular early on but declined steadily, while Jennifer spiked around the 1970s before dropping. For males, John dominated early years and decreased over time, while Michael peaked mid-century and later declined. The visualization highlights how naming trends shift over generations and how certain names rise and fall sharply.
+```{r}
+#\| label: box-problem\
+#\| fig-cap: "Figure 2: Box Volume V(x) vs. Cut Size x for a 36×48 inch sheet"\
+#\| fig-alt: "Smooth curve of V(x) = (48-2x)(36-2x)x on domain 0≤x≤18, peaking near x≈? with volume ≈? cubic inches"\
+library(ggplot2)
+library(ggplot2)
+
+L <- 48
+W <- 36
+V <- function(x) (L - 2*x) * (W - 2*x) * x
+x_max <- min(L, W) / 2
+
+opt   <- optimize(f = V, interval = c(0, x_max), maximum = TRUE)
+max_x <- opt$maximum
+max_V <- opt$objective
+
+ggplot(data = data.frame(x = c(0, x_max)), aes(x = x)) +
+  stat_function(fun = V) +
+  labs(
+    title = "Box Volume as a Function of Cut Size",
+    x = "Cut size x (inches)", y = "Volume V(x) (cubic inches)"
+  ) +
+  theme_light()
+
+```
+**Box Problem Narrative Text**
+
+The box problem graph shows how the volume changes depending on how big the corner cuts are. It goes up quickly at first, peaks, and then drops as the cuts get too big. The maximum volume happens when the cut is around `r round(max_x, 2)` inches, giving about `r round(max_V, 2)` cubic inches. It makes sense that if the cuts are too small or too big, the box doesn’t hold much. Seeing that in the plot made the math idea feel more real to me. 
+
+### **Reflection Narrative Text**
+
+Looking back at all these activities, I’ve learned a lot about cleaning and visualizing data. I got more comfortable using R to make tables and plots, and I started to see how code can tell a story when organized well. Writing everything in Quarto also helped me understand reproducibility and it’s nice knowing my whole project can run start to finish without errors. Overall, I feel like I’ve improved at working with data and explaining what it means in a clear way.
+
+# Code Appendix
+
+A.)
+
+#| label: appendix-armed-forces
+#| echo: true
+
+Build Sex × Pay Grade table from the CSV with 3 header rows
+
+library(readr); library(dplyr); library(tidyr); library(stringr); library(knitr)
+
+path <- "C:/Users/nihal/Downloads/US_Armed_Forces_(6_2025) - Sheet1(1).csv"
+raw <- read_csv(path, col_names = FALSE, show_col_types = FALSE)
+
+Header rows: row2 = branches, row3 = Male/Female/Total
+
+row2 <- raw %>% slice(2) %>% unlist(use.names = FALSE) %>% as.character()
+row3 <- raw %>% slice(3) %>% unlist(use.names = FALSE) %>% as.character()
+
+Forward-fill branch names (skip first column = pay grade)
+
+ff <- character(length(row2)); cur <- ""
+for (i in seq_along(row2)) {
+if (i == 1) { ff[i] <- ""; next }
+b <- trimws(row2[i]); if (!is.na(b) && b != "") cur <- b
+ff[i] <- cur
+}
+norm <- function(x) tolower(gsub("[^A-Za-z0-9]+","", x))
+new_names <- mapply((b,k) ifelse(b=="" || is.na(b), "pay_grade", paste0(norm(b), "", norm(k))), ff, row3)
+new_names[1] <- "pay_grade"
+new_names <- make.unique(new_names)
+
+df <- raw %>% slice(-(1:3)) %>% setNames(new_names) %>%
+mutate(across(-pay_grade, readr::parse_number)) %>%
+filter(!str_detect(pay_grade, regex("^total", ignore_case = TRUE)))
+
+Long table with branch + gender
+
+long_counts <- df %>%
+pivot_longer(-pay_grade, names_to = "col", values_to = "count", values_drop_na = TRUE) %>%
+mutate(
+branch = sub("(male|female|total)$", "", col),
+gender = sub("^.*(male|female|total)$", "\1", tolower(col)),
+gender = stringr::str_to_title(gender),
+count = as.integer(count),
+component = case_when(
+str_starts(pay_grade, "E") ~ "Enlisted",
+str_starts(pay_grade, "W") ~ "Warrant",
+str_starts(pay_grade, "O") ~ "Officer",
+TRUE ~ NA_character_
+)
+) %>%
+filter(gender != "Total") %>%
+select(pay_grade, branch, gender, count, component)
+
+Frequency table for a chosen branch (matches body)
+
+chosen_branch <- "army" # change as needed: "army","navy","marine_corps","air_force","space_force"
+freq_table <- long_counts %>%
+filter(branch == chosen_branch) %>%
+select(gender, pay_grade, count) %>%
+pivot_wider(names_from = pay_grade, values_from = count, values_fill = 0) %>%
+arrange(gender)
+
+kable(freq_table, caption = "Appendix: Sex × Pay Grade (counts) for selected branch")
+
+B.)
+#| label: appendix-baby-names
+#| echo: true
+
+# Relative popularity plot (share of births) – same wrangling as body
+
+library(babynames); library(dplyr); library(ggplot2); library(scales)
+
+names_chosen <- c("Mary","John","Michael","Jennifer")
+
+bn_names <- babynames %>%
+filter(name %in% names_chosen) %>%
+group_by(year, name, sex) %>%
+summarise(total = sum(n), .groups = "drop")
+
+year_totals <- babynames %>%
+group_by(year, sex) %>%
+summarise(year_total = sum(n), .groups = "drop")
+
+bn_share <- bn_names %>%
+left_join(year_totals, by = c("year","sex")) %>%
+mutate(share = total / year_total) %>%
+arrange(name, year)
+
+ggplot(bn_share, aes(year, share, color = name)) +
+geom_line(linewidth = 1) +
+facet_wrap(~ sex, nrow = 2) +
+scale_y_continuous(labels = percent_format(accuracy = 0.1)) +
+labs(title = "Relative Popularity of Selected Baby Names Over Time",
+subtitle = "Share of births per year (by sex)",
+x = "Year", y = "Share of births", color = "Name") +
+theme_minimal(base_size = 13) +
+theme(plot.title = element_text(face = "bold"),
+legend.position = "bottom",
+panel.grid.minor = element_blank())
+
+C.)
+#| label: appendix-box-problem
+#| echo: true
+
+# Box problem function + plot
+
+library(ggplot2)
+
+L <- 48; W <- 36
+V <- function(x) (L - 2*x) * (W - 2*x) * x
+x_max <- min(L, W) / 2
+opt   <- optimize(f = V, interval = c(0, x_max), maximum = TRUE)
+max_x <- opt$maximum; max_V <- opt$objective
+
+ggplot(data = data.frame(x = c(0, x_max)), aes(x = x)) +
+stat_function(fun = V) +
+labs(title = "Box Volume as a Function of Cut Size",
+x = "Cut size x (inches)", y = "Volume V(x) (cubic inches)") +
+theme_light()
+

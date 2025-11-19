@@ -1,0 +1,18 @@
+#Plan for activity 14
+This section explains my plan for completing Activity #14 before talking about the repo itself.
+For Activity #14 my plan was to reuse all of my old code from Activities 08, 10, 13, and 04 instead of writing anything new.
+I first organized the QMD by making clear section headings for the Armed Forces wrangling, the baby names visualization, the box problem plot, and my reflection.
+I fixed my data wrangling from Activities 08 and 10 and created the required frequency table on a smaller group of soldiers.
+I added my baby names plot from Activity 13 and explained why i chose those names.
+I reused my box problem function from Activity 04 and made the volume plot using ggplot like the instructions said.
+I wrote a reflection section about what i feel i’ve learned in the course.
+I put all of the actual code into the Code Appendix so the main body only showed results.
+After everything was organized i rendered the QMD into a PDF to make sure it worked without any errors.
+---
+This section explains my plan for creating and maintaining the GitHub repo.
+I created a new public repository and added the main files like the README, the Activity14.qmd file, and later the PDF.
+I made a second branch so that i wouldn’t be editing the main branch directly, and i did most of my work on that branch.
+I created at least two GitHub issues to track tasks i needed to finish and closed each issue when it was completed.
+I used a pull request to merge my edits from my working branch back into the main branch so the repo had a clean history.
+I kept the repo organized by making sure all files were named clearly and placed in the root of the project.
+After everything was updated i checked that the repo contained the README, the QMD file, the PDF, the plan file, and the commit history showing the work I did.
